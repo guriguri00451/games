@@ -20,22 +20,31 @@ input { flex: 1 1 12rem; }
 :focus-visible { outline: 2px solid #8f9bff; outline-offset: 2px; }
 
 .toolbar { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
-.muted, #status { color: #aaa; font-size: .85rem; margin: 0; }
+#status { color: #aaa; font-size: .85rem; margin: 0; }
 
-.game-list { list-style: none; padding: 0; }
-.game-list > li {
-  border-left: 3px solid #444;
-  padding-left: .75rem;
-  margin-bottom: 1.5rem;
+/* ここから下はポートフォリオ app/globals.css の Works 部分をそのまま移植（色のみ反転） */
+ul { padding-left: 0; list-style-position: inside; }
+.work-list { list-style: none; }
+.work-list > li {
   display: flex;
   gap: .75rem;
+  margin-bottom: 1.5rem;
+  padding-left: .75rem;
+  border-left: 3px solid #444;
 }
-.game-main { flex: 1; min-width: 0; }
-.game-main p { margin: 0; }
-.game-thumb {
-  object-fit: cover; border-radius: 6px; flex-shrink: 0; align-self: stretch;
-  width: clamp(110px, 20vw, 144px); height: auto;
+.work-main { flex: 1; min-width: 0; }
+.work-thumb {
+  flex-shrink: 0;
+  width: clamp(110px, 20vw, 144px);
+  /* height属性の360pxが効かないようauto指定しつつ、stretchで項目の縦幅いっぱいに伸ばす */
+  height: auto;
+  align-self: stretch;
+  object-fit: cover;
+  border-radius: 6px;
 }
+.work-list h3 { margin-top: 0; margin-bottom: .2rem; }
+.work-tech { font-size: .85rem; color: #aaa; margin: 0; }
+.work-links { display: flex; gap: 1rem; padding-left: 0; list-style: none; font-size: .9rem; }
 
 /* play.html: ゲームを画面いっぱいに使う */
 .play-page { max-width: none; height: 100vh; display: flex; flex-direction: column; padding: 1rem; box-sizing: border-box; }

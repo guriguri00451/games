@@ -19,42 +19,48 @@ function isSafeHttpUrl(value) {
   }
 }
 
-function createCard(game) {
-  const isExternal = game.type === "external";
-  const li = document.createElement("li");
+function createElement(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text) element.textContent = text;
+  return element;
+}
 
-  const main = document.createElement("div");
-  main.className = "game-main";
-  const title = document.createElement("h3");
-  const link = document.createElement("a");
-  link.textContent = game.title;
-  if (isExternal) {
+function createPlayLink(game) {
+  const link = createElement("a");
+  if (game.type === "external") {
     link.href = game.url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent += " ↗";
+    link.textContent = "Play ↗";
   } else {
     link.href = `play.html?id=${encodeURIComponent(game.id)}`;
+    link.textContent = "Play";
   }
-  title.append(link);
-  main.append(title);
+  return link;
+}
 
-  if (game.description) {
-    const desc = document.createElement("p");
-    desc.textContent = game.description;
-    main.append(desc);
-  }
-  const meta = document.createElement("p");
-  meta.className = "muted";
-  meta.textContent = game.addedAt;
-  main.append(meta);
+// ポートフォリオの components/WorkList.tsx と同じDOM構造。
+// サムネは align-self:stretch でカード高さに伸びるため、構造や余白を変えると比率も変わる
+function createCard(game) {
+  const main = createElement("div", "work-main");
+  main.append(createElement("h3", null, game.title), createElement("p", "work-tech", game.addedAt));
+  if (game.description) main.append(createElement("p", null, game.description));
+
+  const links = createElement("ul", "work-links");
+  const linkItem = createElement("li");
+  linkItem.append(createPlayLink(game));
+  links.append(linkItem);
+  main.append(links);
+
+  const li = createElement("li");
   li.append(main);
-
   if (game.thumbnail) {
-    const img = document.createElement("img");
-    img.className = "game-thumb";
+    const img = createElement("img", "work-thumb");
     img.src = game.thumbnail;
-    img.alt = "";
+    img.alt = game.title;
+    img.width = 640;
+    img.height = 360;
     img.loading = "lazy";
     li.append(img);
   }
