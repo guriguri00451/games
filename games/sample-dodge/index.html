@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ドッジ</title>
+<style>
+  body { margin: 0; background: #1f1020; color: #fff; font-family: system-ui, sans-serif; display: grid; place-items: center; height: 100vh; }
+  canvas { background: #2d1530; max-width: 100%; max-height: 100%; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="400" height="500"></canvas>
+<script>
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const PLAYER_SIZE = 28, PLAYER_SPEED = 5, SPAWN_INTERVAL_MS = 500;
+  const keys = new Set();
+  let player, blocks, score, isOver, lastSpawn;
+
+  function reset() {
+    player = { x: canvas.width / 2 - PLAYER_SIZE / 2, y: canvas.height - 50 };
+    blocks = []; score = 0; isOver = false; lastSpawn = 0;
+  }
+
+  addEventListener("keydown", (e) => { keys.add(e.key); if (isOver && e.key === " ") reset(); });
+  addEventListener("keyup", (e) => keys.delete(e.key));
+  // タッチ/マウス: 触れたX座標へプレイヤーを追従させる
+  function followPointer(e) {
+    const rect = canvas.getBoundingClientRect();
+    player.x = (e.clientX - rect.left) * (canvas.width / rect.width) - PLAYER_SIZE / 2;
+  }
+  canvas.addEventListener("pointermove", followPointer);
+  canvas.addEventListener("pointerdown", (e) => { if (isOver) reset(); else followPointer(e); });
+
+  function update(now) {
+    if (keys.has("ArrowLeft")) player.x -= PLAYER_SPEED;
+    if (keys.has("ArrowRight")) player.x += PLAYER_SPEED;
+    player.x = Math.max(0, Math.min(canvas.width - PLAYER_SIZE, player.x));
+
+    if (now - lastSpawn > SPAWN_INTERVAL_MS) {
+      lastSpawn = now;
+      blocks.push({ x: Math.random() * (canvas.width - 30), y: -30, size: 30, speed: 2 + Math.random() * 3 });
+    }
+    for (const b of blocks) {
+      b.y += b.speed;
+      const isHit = b.x < player.x + PLAYER_SIZE && b.x + b.size > player.x &&
+                    b.y < player.y + PLAYER_SIZE && b.y + b.size > player.y;
+      if (isHit) isOver = true;
+    }
+    blocks = blocks.filter((b) => b.y < canvas.height);
+    score += 1;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#38bdf8"; ctx.fillRect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE);
+    ctx.fillStyle = "#f43f5e"; for (const b of blocks) ctx.fillRect(b.x, b.y, b.size, b.size);
+    ctx.fillStyle = "#fff"; ctx.font = "16px system-ui"; ctx.fillText(`スコア ${score}`, 10, 24);
+    if (isOver) {
+      ctx.font = "24px system-ui"; ctx.textAlign = "center";
+      ctx.fillText("ゲームオーバー", canvas.width / 2, 230);
+      ctx.font = "14px system-ui"; ctx.fillText("スペース/タップで再開", canvas.width / 2, 260);
+      ctx.textAlign = "start";
+    }
+  }
+
+  function loop(now) { if (!isOver) update(now); draw(); requestAnimationFrame(loop); }
+  reset(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
