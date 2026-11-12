@@ -4,14 +4,16 @@
     "type": "local",
     "title": "クリックチャレンジ",
     "description": "10秒間で何回クリックできるか挑戦するダミーゲーム。",
-    "addedAt": "2026-11-13"
+    "addedAt": "2026-11-13",
+    "thumbnail": "games/sample-click/thumb.svg"
   },
   {
     "id": "sample-dodge",
     "type": "local",
     "title": "ドッジ",
     "description": "矢印キー/タッチで降ってくる障害物を避けるダミーゲーム。",
-    "addedAt": "2026-11-14"
+    "addedAt": "2026-11-14",
+    "thumbnail": "games/sample-dodge/thumb.svg"
   },
   {
     "id": "sample-external",
