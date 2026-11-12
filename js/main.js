@@ -22,44 +22,42 @@ function isSafeHttpUrl(value) {
 function createCard(game) {
   const isExternal = game.type === "external";
   const li = document.createElement("li");
+
+  const main = document.createElement("div");
+  main.className = "game-main";
+  const title = document.createElement("h3");
   const link = document.createElement("a");
-  link.className = "card";
+  link.textContent = game.title;
   if (isExternal) {
     link.href = game.url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
+    link.textContent += " ↗";
   } else {
-    // idはgames.json由来のみを使い、URLパラメータの値をそのまま信用しない設計の入口
     link.href = `play.html?id=${encodeURIComponent(game.id)}`;
   }
+  title.append(link);
+  main.append(title);
 
-  const thumb = document.createElement("div");
-  thumb.className = "card-thumb";
+  if (game.description) {
+    const desc = document.createElement("p");
+    desc.textContent = game.description;
+    main.append(desc);
+  }
+  const meta = document.createElement("p");
+  meta.className = "muted";
+  meta.textContent = game.addedAt;
+  main.append(meta);
+  li.append(main);
+
   if (game.thumbnail) {
-    thumb.style.backgroundImage = `url("${encodeURI(game.thumbnail)}")`;
-  } else {
-    thumb.style.background = `linear-gradient(135deg, ${game.color || "#4f46e5"}, #0f1117)`;
-    thumb.textContent = game.emoji || "🎮";
+    const img = document.createElement("img");
+    img.className = "game-thumb";
+    img.src = game.thumbnail;
+    img.alt = "";
+    img.loading = "lazy";
+    li.append(img);
   }
-
-  const body = document.createElement("div");
-  body.className = "card-body";
-  const title = document.createElement("h2");
-  title.className = "card-title";
-  title.textContent = game.title;
-  if (isExternal) {
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = "外部";
-    title.append(badge);
-  }
-  const desc = document.createElement("p");
-  desc.className = "card-desc";
-  desc.textContent = game.description || "";
-
-  body.append(title, desc);
-  link.append(thumb, body);
-  li.append(link);
   return li;
 }
 

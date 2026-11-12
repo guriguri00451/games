@@ -14,7 +14,7 @@ GitHub Pages で公開する、ブラウザゲームのポータルサイト（�
 | `title` | ✔ | 表示名 |
 | `addedAt` | ✔ | `YYYY-MM-DD`（新着順に使用） |
 | `url` | external のみ | 遷移先（http/https のみ） |
-| `description` / `emoji` / `color` / `thumbnail` | | カード表示用。thumbnail 未指定なら emoji + グラデーション |
+| `description` / `thumbnail` | | 説明文とサムネイル画像のパス（thumbnail は未指定なら表示しない） |
 
 ## ローカル確認
 

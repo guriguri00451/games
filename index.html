@@ -3,27 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Game Portal</title>
-  <meta name="description" content="ブラウザで遊べる自作ゲームのポータル">
+  <title>t.そーま | Games</title>
+  <meta name="description" content="t.そーまのブラウザゲーム置き場">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="site-header">
-    <h1><a href="./">🎮 Game Portal</a></h1>
-  </header>
-  <main class="container">
-    <div class="toolbar">
-      <input id="search" type="search" placeholder="ゲームを検索" aria-label="ゲームを検索">
-      <select id="sort" aria-label="並び替え">
-        <option value="newest">新着順</option>
-        <option value="oldest">古い順</option>
-        <option value="title">名前順</option>
-      </select>
-    </div>
-    <p id="status" role="status"></p>
-    <ul id="game-grid" class="grid"></ul>
+  <main>
+    <header>
+      <h1>Games</h1>
+      <p><a href="https://guriguri00451.github.io/">← t.そーま</a></p>
+    </header>
+    <section>
+      <h2>Works</h2>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="検索" aria-label="ゲームを検索">
+        <select id="sort" aria-label="並び替え">
+          <option value="newest">新着順</option>
+          <option value="oldest">古い順</option>
+          <option value="title">名前順</option>
+        </select>
+      </div>
+      <p id="status" role="status"></p>
+      <ul id="game-grid" class="game-list"></ul>
+    </section>
   </main>
-  <footer class="site-footer">© Game Portal</footer>
   <script src="js/main.js"></script>
 </body>
 </html>
