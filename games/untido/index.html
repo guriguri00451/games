@@ -106,7 +106,7 @@ let fall = null, showT = 0, rot = 0, shake = 0, time = 0, J = null, samples = []
 let viewK = 0;                          // 0: 真上（半紙）　1: 床の間（立体）
 let aR = 0, aCx = 0, aCz = 0, aLoop = false;   // 手添え（丸く描く補助）
 let sYaw = 0, sPhi = PHI, sVel = 0, sDrag = null, scrollDirty = false, shareBlob = null, blobTimer = 0, flashTimer = 0;
-const SHARE_URL = '';   // 公開先が決まったらURLを入れる
+const SHARE_URL = 'https://guriguri00451.github.io/games/play/untido/';   // 公開先が決まったらURLを入れる
 let isRoom = false, stageDirty = true, tubeDirty = false, tubeFull = false, blobIdx = [];
 let save = loadSave();
 
@@ -939,7 +939,14 @@ $('tweet').addEventListener('click', e => {
   if (touch && shareBlob && navigator.canShare) {
     const file = new File([shareBlob], `unchido-${J.total}.png`, { type: 'image/png' });
     let ok = false; try { ok = navigator.canShare({ files: [file] }); } catch (err) {}
-    if (ok) { e.preventDefault(); navigator.share({ files: [file], text: shareText() }).catch(() => {}); return; }
+    if (ok) {
+      e.preventDefault();
+      const intent = $('tweet').href;
+      flash('共有メニューからXを選んで');
+      // 共有メニューが使えない・閉じられたときは、Xの投稿画面を開く
+      navigator.share({ files: [file], text: shareText() }).catch(() => { location.href = intent; });
+      return;
+    }
   }
   try {
     const blob = shareBlob ? Promise.resolve(shareBlob) : new Promise(r => scrollCv.toBlob(r, 'image/png'));
