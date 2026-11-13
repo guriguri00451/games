@@ -34,7 +34,7 @@ function createPlayLink(game) {
     link.rel = "noopener noreferrer";
     link.textContent = "Play ↗";
   } else {
-    link.href = `play.html?id=${encodeURIComponent(game.id)}`;
+    link.href = `play/${encodeURIComponent(game.id)}/`;
     link.textContent = "Play";
   }
   return link;
