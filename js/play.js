@@ -15,7 +15,7 @@ async function init() {
       statusEl.textContent = "ゲームが見つかりませんでした";
       return;
     }
-    document.title = `${game.title} | Game Portal`;
+    document.title = `${game.title} | t.そーまGames`;
     titleEl.textContent = game.title;
     frame.title = game.title;
     frame.src = `games/${encodeURIComponent(game.id)}/index.html`;
