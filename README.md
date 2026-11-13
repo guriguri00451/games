@@ -15,6 +15,7 @@ GitHub Pages で公開する、ブラウザゲームのポータルサイト（�
 | `addedAt` | ✔ | `YYYY-MM-DD`（新着順に使用） |
 | `url` | external のみ | 遷移先（http/https のみ） |
 | `description` / `thumbnail` | | 説明文とサムネイル画像のパス（thumbnail は未指定なら表示しない） |
+| `instructions` | | 遊び方。文字列の配列で、1要素1行としてプレイ画面のゲーム上部に表示 |
 
 ## ローカル確認
 

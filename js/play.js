@@ -2,6 +2,17 @@ const statusEl = document.getElementById("status");
 const frame = document.getElementById("game-frame");
 const titleEl = document.getElementById("game-title");
 const fullscreenButton = document.getElementById("fullscreen");
+const instructionsEl = document.getElementById("instructions");
+
+function renderInstructions(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return;
+  instructionsEl.replaceChildren(...lines.map((line) => {
+    const item = document.createElement("li");
+    item.textContent = line;
+    return item;
+  }));
+  instructionsEl.hidden = false;
+}
 
 async function init() {
   const requestedId = new URLSearchParams(location.search).get("id");
@@ -18,6 +29,7 @@ async function init() {
     document.title = `${game.title} | t.そーまGames`;
     titleEl.textContent = game.title;
     frame.title = game.title;
+    renderInstructions(game.instructions);
     frame.src = `games/${encodeURIComponent(game.id)}/index.html`;
     frame.hidden = false;
     statusEl.hidden = true;

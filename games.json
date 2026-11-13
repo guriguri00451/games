@@ -5,6 +5,12 @@
     "title": "うんち道",
     "description": "円を描いて、一巻き。師範が銘を付ける。",
     "addedAt": "2026-11-13",
-    "thumbnail": "games/untido/thumb.jpg"
+    "thumbnail": "games/untido/thumb.jpg",
+    "instructions": [
+      "一、半紙に指を置き、円を描け。",
+      "二、外から内へ、少しずつ巻け。急げば細く、休めば溜まる。",
+      "三、中心で巻き終えたら、止めずに払え。尖るほど良し。",
+      "四、高く積めば崩れる。座りを忘れるな。"
+    ]
   }
 ]
