@@ -1,5 +1,13 @@
 [
   {
+    "id": "untido",
+    "type": "local",
+    "title": "うんち道",
+    "description": "円を描いて、一巻き。師範が銘を付ける。",
+    "addedAt": "2026-11-13",
+    "thumbnail": "games/untido/thumb.jpg"
+  },
+  {
     "id": "sample-click",
     "type": "local",
     "title": "クリックチャレンジ",

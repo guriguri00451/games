@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="円を描いて、一巻き。師範が銘を付ける。">
+<title>うんち道</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Mai&family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* layout: 稽古は半紙を真上から見て中央に描く。離すと半紙が消え、床の間の盆に載った立体へ視点が降りる。結果は掛け軸一幅 */
+  --sumi:#1b1815;      /* 墨 */
+  --kinari:#ebe3d0;    /* 生成り */
+  --kabe:#bdb394;      /* 聚楽壁 */
+  --ai:#2c3945;        /* 表装の藍鼠 */
+  --shu:#b23a2b;       /* 朱（落款と主ボタンだけ） */
+  --kin:#a58a4a;       /* 一文字の金 */
+  --display:"Yuji Mai","Yuji Syuku","Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Noto Serif JP",serif;
+  --body:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Noto Serif JP",serif;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;background:var(--sumi);color:var(--kinari);overflow:hidden;
+  font-family:var(--body);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+canvas.layer{position:fixed;inset:0;width:100%;height:100%;display:block}
+#gl{touch-action:none;cursor:crosshair}
+#hud{position:fixed;top:10px;right:12px;display:flex;gap:10px;align-items:center;
+  font:500 13px var(--body);letter-spacing:.12em;color:var(--kinari);transition:color .6s}
+body.room #hud{color:var(--sumi)}
+button,.btn{font:500 16px var(--body);letter-spacing:.14em;color:var(--kinari);background:transparent;
+  border:1px solid rgba(235,227,208,.45);border-radius:2px;padding:10px 18px;cursor:pointer;text-decoration:none;
+  display:inline-block;line-height:1.2}
+button:hover,.btn:hover{border-color:var(--kinari)}
+:focus-visible{outline:2px solid var(--kinari);outline-offset:3px}
+#snd{padding:4px 9px;font-size:13px;color:inherit;border-color:currentColor}
+body.room #snd:focus-visible{outline-color:var(--sumi)}
+#snd[aria-pressed="false"]{text-decoration:line-through;opacity:.55}
+#result{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:16px;box-sizing:border-box;background:rgba(14,12,11,.88);opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .5s, visibility 0s .5s}
+#result.on{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .5s}
+#scroll{display:block;min-height:0;max-width:100%;max-height:calc(100% - 128px);aspect-ratio:720/1280;
+  box-shadow:0 10px 40px rgba(0,0,0,.6);touch-action:none;cursor:grab}
+#promo{margin:0;min-height:1.3em;font:500 14px var(--body);letter-spacing:.2em;color:var(--kin)}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.row button,.row .btn{font-size:15px;letter-spacing:.08em;padding:10px 13px}
+#again{background:var(--shu);border-color:var(--shu)}
+#nogl{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;
+  background:var(--sumi);font:500 15px/1.9 var(--body)}
+@media (prefers-reduced-motion:reduce){#result{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="stage" class="layer"></canvas>
+<canvas id="paper" class="layer"></canvas>
+<canvas id="gl" class="layer" role="img" aria-label="うんち道。半紙の中央に円を描くと一巻きずつ積み上がる。離すと盆の上の立体になる。"></canvas>
+<div id="hud"><span id="rank"></span><button id="snd" type="button" aria-pressed="true" aria-label="音の入切">音</button></div>
+<div id="result" aria-live="polite">
+  <canvas id="scroll" role="img"></canvas>
+  <p id="promo"></p>
+  <div class="row">
+    <button id="again" type="button">もう一巻き</button>
+    <button id="save" type="button">画像を保存</button>
+    <a id="tweet" class="btn" target="_blank" rel="noopener">Xに投稿</a>
+  </div>
+</div>
+<div id="nogl">この端末では立体を描けませんでした。<br>別のブラウザで開いてください。</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const st = $('stage'), g = st.getContext('2d');
+const pc = $('paper'), pg = pc.getContext('2d');
+const glc = $('gl');
+const bg = document.createElement('canvas'), paperBg = document.createElement('canvas');
+const scrollCv = $('scroll'), scrollBg = document.createElement('canvas'), scrollFg = document.createElement('canvas');
+const DISPLAY = '"Yuji Mai","Yuji Syuku","Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Noto Serif JP",serif';
+const BODY = '"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Noto Serif JP",serif';
+const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = u => u * u * (3 - 2 * u);
+const TAU = Math.PI * 2;
+
+// ---- 定数（世界の単位は盆の半径≒1） ----
+const PHI = 28 * Math.PI / 180;
+const TRAY_R = 1.12, RCLAMP = 1.55, DS = 0.035;
+const Q = 0.46;                        // 出る量（体積/秒）
+const TMIN = 0.105, TMAX = 0.44;
+const VPOOL = Q / (Math.PI * TMAX * TMAX);
+const VMAX = Q * 13;                   // 一回分
+
+let W = 0, H = 0, DPR = 1;
+const L = {};
+
+// ---- 状態 ----
+let P = [], sLen = 0, tailFrom = -1;
+let state = 'idle';
+let cur = { x: 0, z: 0, px: 0, py: 0 }, moveQ = [], started = false, holdT = 0, downPx = null, pid = null;
+let vS = 2, vL = 2, tCur = 0.25, carry = 0, vol = 0, pooled = 0;
+let angSum = 0, lastAng = null, vSum = 0, vSq = 0, vN = 0;
+let stab = { ratio: 0, maxY: 0 }, sinceCheck = 0, ext = 0, flick = 0;
+let fall = null, showT = 0, rot = 0, shake = 0, time = 0, J = null, samples = [];
+let viewK = 0;                          // 0: 真上（半紙）　1: 床の間（立体）
+let aR = 0, aCx = 0, aCz = 0, aLoop = false;   // 手添え（丸く描く補助）
+let sYaw = 0, sPhi = PHI, sVel = 0, sDrag = null, scrollDirty = false, shareBlob = null, blobTimer = 0, flashTimer = 0;
+const SHARE_URL = '';   // 公開先が決まったらURLを入れる
+let isRoom = false, stageDirty = true, tubeDirty = false, tubeFull = false, blobIdx = [];
+let save = loadSave();
+
+// ---- 立体 ----
+const RS = 16, MAXR = 3600;
+const COS = [], SIN = [];
+for (let k = 0; k < RS; k++) { COS.push(Math.cos(k / RS * TAU)); SIN.push(Math.sin(k / RS * TAU)); }
+const posA = new Float32Array(MAXR * RS * 3), norA = new Float32Array(MAXR * RS * 3);
+const Qx = new Float32Array(MAXR), Qy = new Float32Array(MAXR), Qz = new Float32Array(MAXR), Rr = new Float32Array(MAXR);
+const Nx = new Float32Array(MAXR), Ny = new Float32Array(MAXR), Nz = new Float32Array(MAXR);
+let renderer = null, scene, cam, group, tubeGeo, mat, trayMats = [], catchPaper, catchFloor, sphereGeo, blobMeshes = [], builtN = 0;
+
+function init3D() {
+  renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  scene = new THREE.Scene();
+  cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  // 映り込み（障子越しの明かり）
+  const ec = document.createElement('canvas'); ec.width = 256; ec.height = 128;
+  const e = ec.getContext('2d'), eg = e.createLinearGradient(0, 0, 0, 128);
+  eg.addColorStop(0, '#8d8372'); eg.addColorStop(0.22, '#4a4239'); eg.addColorStop(0.5, '#231e19'); eg.addColorStop(1, '#0c0907');
+  e.fillStyle = eg; e.fillRect(0, 0, 256, 128);
+  e.fillStyle = '#ffffff'; e.fillRect(40, 6, 52, 20); e.fillStyle = '#e8cfa8'; e.fillRect(172, 14, 36, 14);
+  const et = new THREE.CanvasTexture(ec); et.mapping = THREE.EquirectangularReflectionMapping; et.encoding = THREE.sRGBEncoding;
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(et).texture; et.dispose(); pm.dispose();
+  scene.add(new THREE.HemisphereLight(0xfff1dc, 0x3a2a1c, 0.42));
+  const light = new THREE.DirectionalLight(0xfff2de, 1.1); light.position.set(-3.2, 6.5, 3.6); light.castShadow = true;
+  light.shadow.mapSize.set(1024, 1024);
+  const sc = light.shadow.camera; sc.left = -2.8; sc.right = 2.8; sc.top = 2.8; sc.bottom = -2.8; sc.near = 1; sc.far = 18;
+  light.shadow.bias = -0.0008; light.shadow.normalBias = 0.025; light.shadow.radius = 3;
+  scene.add(light);
+  // 飴釉
+  mat = new THREE.MeshPhysicalMaterial({ color: 0x6b3610, roughness: 0.4, metalness: 0, clearcoat: 0.85, clearcoatRoughness: 0.2, envMapIntensity: 0.65 });
+  group = new THREE.Group(); scene.add(group);
+  tubeGeo = new THREE.BufferGeometry();
+  const pa = new THREE.BufferAttribute(posA, 3), na = new THREE.BufferAttribute(norA, 3);
+  pa.setUsage(THREE.DynamicDrawUsage); na.setUsage(THREE.DynamicDrawUsage);
+  tubeGeo.setAttribute('position', pa); tubeGeo.setAttribute('normal', na);
+  const idx = new Uint16Array((MAXR - 1) * RS * 6); let o = 0;
+  for (let i = 0; i < MAXR - 1; i++) for (let k = 0; k < RS; k++) {
+    const a = i * RS + k, b = i * RS + (k + 1) % RS, c = a + RS, d = b + RS;
+    idx[o++] = a; idx[o++] = b; idx[o++] = c; idx[o++] = b; idx[o++] = d; idx[o++] = c;
+  }
+  tubeGeo.setIndex(new THREE.BufferAttribute(idx, 1)); tubeGeo.setDrawRange(0, 0);
+  const tube = new THREE.Mesh(tubeGeo, mat); tube.castShadow = tube.receiveShadow = true; tube.frustumCulled = false; group.add(tube);
+  sphereGeo = new THREE.SphereGeometry(1, 32, 20);
+  // 漆の盆
+  const lac = new THREE.MeshPhysicalMaterial({ color: 0x070605, roughness: 0.36, clearcoat: 1, clearcoatRoughness: 0.14, transparent: true, envMapIntensity: 0.55 });
+  const rimM = new THREE.MeshStandardMaterial({ color: 0x6a1d13, roughness: 0.6, transparent: true, envMapIntensity: 0.25 });
+  trayMats = [lac, rimM];
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(TRAY_R, TRAY_R * 0.96, 0.07, 72), lac);
+  body.position.y = -0.035; body.receiveShadow = true; body.castShadow = true; scene.add(body);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(TRAY_R - 0.014, 0.014, 8, 120), rimM);
+  rim.rotation.x = Math.PI / 2; rim.position.y = 0.002; scene.add(rim);
+  trayMats.meshes = [body, rim];
+  // 影受け（半紙の上／床板の上）
+  catchPaper = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.ShadowMaterial({ opacity: 0.22, depthWrite: false }));
+  catchPaper.rotation.x = -Math.PI / 2; catchPaper.receiveShadow = true; scene.add(catchPaper);
+  catchFloor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.ShadowMaterial({ opacity: 0.45, depthWrite: false }));
+  catchFloor.rotation.x = -Math.PI / 2; catchFloor.position.y = -0.07; catchFloor.receiveShadow = true; scene.add(catchFloor);
+}
+function applyCamera(phi, cx, cy, S) {
+  cam.left = -cx / S; cam.right = (W - cx) / S; cam.top = cy / S; cam.bottom = -(H - cy) / S;
+  cam.position.set(0, Math.sin(phi) * 30, Math.cos(phi) * 30); cam.rotation.set(-phi, 0, 0);
+  cam.updateProjectionMatrix();
+}
+function setStage(e) {   // e: 0 半紙 → 1 床の間
+  for (const m of trayMats) m.opacity = clamp((e - 0.1) / 0.6, 0, 1);
+  for (const m of trayMats.meshes) m.visible = e > 0.1;
+  catchPaper.material.opacity = 0.22 * (1 - e); catchPaper.visible = e < 0.99;
+  catchFloor.material.opacity = 0.45 * e; catchFloor.visible = e > 0.01;
+}
+function buildTube(full) {
+  const n = Math.min(P.length, MAXR);
+  if (n < 2) { tubeGeo.setDrawRange(0, 0); builtN = n; return; }
+  const from = full ? 0 : Math.max(0, builtN - 12), q0 = Math.max(0, from - 1), live = tailFrom < 0;
+  for (let i = q0; i < n; i++) {
+    let sx = 0, sy = 0, sz = 0, sr = 0, sw = 0, hy = 0, hw = 0;
+    for (let d = -2; d <= 2; d++) {
+      const j = i + d; if (j < 0 || j >= n) continue;
+      const w = 3 - Math.abs(d), p = P[j];
+      sx += w * p.x; sz += w * p.z; sr += w * Math.min(p.t, TMAX); sw += w;
+    }
+    for (let d = -6; d <= 6; d++) {
+      const j = i + d; if (j < 0 || j >= n) continue;
+      const w = 7 - Math.abs(d); hy += w * P[j].y; hw += w;
+    }
+    Qx[i] = sx / sw; Qy[i] = hy / hw; Qz[i] = sz / sw;
+    let r = sr / sw; const j = n - 1 - i;
+    if (i < 4) r *= Math.sqrt(1 - (1 - i / 4) ** 2);
+    if (live) { if (j < 3) r *= Math.sqrt(1 - (1 - j / 3) ** 2); } else if (j === 0) r = 0;
+    Rr[i] = r;
+  }
+  for (let i = from; i < n; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    let tx = Qx[b] - Qx[a], ty = Qy[b] - Qy[a], tz = Qz[b] - Qz[a];
+    const seg = Math.hypot(tx, ty, tz);
+    if (seg < 1e-6) { tx = 1; ty = 0; tz = 0; } else { tx /= seg; ty /= seg; tz /= seg; }
+    let nx = 0, ny = 1, nz = 0;
+    if (i > 0) { nx = Nx[i - 1]; ny = Ny[i - 1]; nz = Nz[i - 1]; }
+    const d = nx * tx + ny * ty + nz * tz; nx -= d * tx; ny -= d * ty; nz -= d * tz;
+    let l = Math.hypot(nx, ny, nz);
+    if (l < 1e-4) {
+      if (Math.abs(ty) < 0.9) { nx = -tx * ty; ny = 1 - ty * ty; nz = -tz * ty; } else { nx = 1 - tx * tx; ny = -ty * tx; nz = -tz * tx; }
+      l = Math.hypot(nx, ny, nz);
+    }
+    nx /= l; ny /= l; nz /= l; Nx[i] = nx; Ny[i] = ny; Nz[i] = nz;
+    const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+    const r = Rr[i], slope = seg > 1e-5 ? (Rr[b] - Rr[a]) / seg : 0;
+    let o = i * RS * 3;
+    for (let k = 0; k < RS; k++) {
+      const c = COS[k], s = SIN[k], dx = c * nx + s * bx, dy = c * ny + s * by, dz = c * nz + s * bz;
+      posA[o] = Qx[i] + dx * r; posA[o + 1] = Qy[i] + dy * r; posA[o + 2] = Qz[i] + dz * r;
+      const mx = dx - tx * slope, my = dy - ty * slope, mz = dz - tz * slope, ml = Math.hypot(mx, my, mz) || 1;
+      norA[o] = mx / ml; norA[o + 1] = my / ml; norA[o + 2] = mz / ml; o += 3;
+    }
+  }
+  const pa = tubeGeo.attributes.position, na = tubeGeo.attributes.normal;
+  pa.updateRange.offset = na.updateRange.offset = from * RS * 3;
+  pa.updateRange.count = na.updateRange.count = (n - from) * RS * 3;
+  pa.needsUpdate = na.needsUpdate = true;
+  tubeGeo.setDrawRange(0, (n - 1) * RS * 6); builtN = n;
+}
+function syncBlobs() {
+  for (let i = 0; i < blobIdx.length; i++) {
+    let m = blobMeshes[i];
+    if (!m) { m = new THREE.Mesh(sphereGeo, mat); m.castShadow = m.receiveShadow = true; group.add(m); blobMeshes[i] = m; }
+    const p = P[blobIdx[i]]; m.visible = true; m.position.set(p.x, p.y, p.z); m.scale.setScalar(p.t);
+  }
+  for (let i = blobIdx.length; i < blobMeshes.length; i++) blobMeshes[i].visible = false;
+}
+
+// ---- 配置 ----
+function layout() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  for (const c of [st, pc]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+  if (renderer) { renderer.setPixelRatio(DPR); renderer.setSize(W, H, false); }
+  L.cx = W / 2; L.cw = Math.min(W, H * 0.62);
+  L.horizon = H * 0.48; L.trayY = H * 0.69; L.S = Math.min(L.cw * 0.33, H * 0.16);
+  const pw = Math.min(W - 16, H * 0.62, 640), ph = Math.min(H - 96, pw * 1.6);
+  L.paper = { x: (W - pw) / 2, y: (H - ph) / 2 + 14, w: pw, h: ph };
+  L.Sd = pw / 2.3; L.dy = L.paper.y + ph / 2;
+  buildStatic(); buildPaper(); stageDirty = true;
+}
+function speckle(c, x, y, w, h, n, rgb) {
+  for (let i = 0; i < n; i++) {
+    c.fillStyle = `rgba(${rgb},${0.02 + Math.random() * 0.05})`;
+    c.fillRect(x + Math.random() * w, y + Math.random() * h, 1 + Math.random() * 1.6, 1 + Math.random() * 1.6);
+  }
+}
+function vtext(c, str, x, y, size, family, weight, lead) {
+  c.font = `${weight || 500} ${size}px ${family || BODY}`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  const ld = lead || 1.08; let yy = y + size / 2;
+  for (const ch of str) {
+    if (ch === '。' || ch === '、') { c.fillText(ch, x + size * 0.62, yy - size * 0.6); yy += size * 0.45; continue; }
+    if (ch === '　') { yy += size * 0.6; continue; }
+    c.fillText(ch, x, yy); yy += size * ld;
+  }
+  return yy - size / 2;
+}
+// 筆で書いた字：一字ごとに傾きと大きさが揺れ、掠れが入る
+function brushText(c, str, x, y, size, color, seed) {
+  const pad = size * 0.4, w = Math.ceil(size + pad * 2), h = Math.ceil(size * 1.04 * str.length + pad * 2);
+  const t = document.createElement('canvas'); t.width = w * 2; t.height = h * 2;
+  const k = t.getContext('2d'); k.scale(2, 2);
+  let s = (seed || 7) % 2147483647; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  k.fillStyle = color; k.textAlign = 'center'; k.textBaseline = 'middle'; k.font = `400 ${size}px ${DISPLAY}`;
+  let yy = pad + size / 2;
+  for (const ch of str) {
+    k.save(); k.translate(w / 2 + (rnd() - 0.5) * size * 0.09, yy); k.rotate((rnd() - 0.5) * 0.10);
+    const sc = 1 + (rnd() - 0.5) * 0.12; k.scale(sc, sc); k.fillText(ch, 0, 0); k.restore();
+    yy += size * 1.04;
+  }
+  k.globalCompositeOperation = 'destination-out'; k.lineCap = 'round';
+  const ns = Math.round(str.length * size * 0.9);
+  for (let i = 0; i < ns; i++) {
+    const px = rnd() * w, py = rnd() * h, len = size * (0.05 + rnd() * 0.24), a = -1.05 + (rnd() - 0.5) * 0.5;
+    k.globalAlpha = 0.16 + rnd() * 0.36; k.lineWidth = (0.5 + rnd() * 1.1) * Math.max(0.6, size / 60);
+    k.beginPath(); k.moveTo(px, py); k.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); k.stroke();
+  }
+  c.drawImage(t, x - w / 2, y - pad, w, h);
+  return y + size * 1.04 * str.length;
+}
+function buildStatic() {
+  bg.width = st.width; bg.height = st.height;
+  const b = bg.getContext('2d'); b.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // 壁
+  let gr = b.createLinearGradient(0, 0, 0, L.horizon);
+  gr.addColorStop(0, '#b0a685'); gr.addColorStop(1, '#c3b99a');
+  b.fillStyle = gr; b.fillRect(0, 0, W, L.horizon + 2);
+  speckle(b, 0, 0, W, L.horizon, W * L.horizon / 500, '60,50,30');
+  // 題の掛け軸
+  const sw = clamp(L.cw * 0.2, 60, 130), sh = Math.min(L.horizon * 0.8, sw * 3.6);
+  const sx = Math.max(10, L.cx - L.cw * 0.3 - sw / 2), sy = L.horizon * 0.09;
+  b.fillStyle = 'rgba(0,0,0,.14)'; b.fillRect(sx + 4, sy + 6, sw, sh);
+  b.strokeStyle = '#3a2f25'; b.lineWidth = 1;
+  b.beginPath(); b.moveTo(sx + sw * 0.25, sy); b.lineTo(sx + sw / 2, sy - L.horizon * 0.05); b.lineTo(sx + sw * 0.75, sy); b.stroke();
+  b.fillStyle = '#2c3945'; b.fillRect(sx, sy, sw, sh);
+  const pm = sw * 0.14, py0 = sy + sh * 0.14, phh = sh * 0.70;
+  b.fillStyle = '#a58a4a'; b.fillRect(sx + pm, py0 - sh * 0.022, sw - pm * 2, sh * 0.022); b.fillRect(sx + pm, py0 + phh, sw - pm * 2, sh * 0.022);
+  b.fillStyle = '#ece5d3'; b.fillRect(sx + pm, py0, sw - pm * 2, phh);
+  b.fillStyle = '#2a1c12'; b.fillRect(sx - 4, sy + sh - 3, sw + 8, 6); b.fillRect(sx - 2, sy - 2, sw + 4, 3);
+  const ts = Math.min((sw - pm * 2) * 0.78, phh / 4.5);
+  brushText(b, 'うんち道', sx + sw / 2, py0 + (phh - ts * 4.16) / 2, ts, '#1b1815', 11);
+  // 床板
+  gr = b.createLinearGradient(0, L.horizon, 0, H);
+  gr.addColorStop(0, '#4b3625'); gr.addColorStop(1, '#22160e');
+  b.fillStyle = gr; b.fillRect(0, L.horizon, W, H - L.horizon);
+  b.strokeStyle = 'rgba(0,0,0,.14)'; b.lineWidth = 1;
+  for (let i = 0; i < 11; i++) {
+    const y = L.horizon + (H - L.horizon) * Math.pow((i + 0.5) / 11, 1.5);
+    b.beginPath(); b.moveTo(0, y); b.bezierCurveTo(W * 0.3, y + 2, W * 0.7, y - 2, W, y + 1); b.stroke();
+  }
+  gr = b.createLinearGradient(0, L.horizon, 0, L.horizon + 16);
+  gr.addColorStop(0, 'rgba(0,0,0,.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  b.fillStyle = gr; b.fillRect(0, L.horizon, W, 16);
+}
+function buildPaper() {
+  paperBg.width = pc.width; paperBg.height = pc.height;
+  const b = paperBg.getContext('2d'); b.setTransform(DPR, 0, 0, DPR, 0, 0);
+  b.fillStyle = '#222d36'; b.fillRect(0, 0, W, H);
+  speckle(b, 0, 0, W, H, W * H / 600, '255,255,255');
+  const p = L.paper;
+  b.fillStyle = 'rgba(0,0,0,.35)'; b.fillRect(p.x + 3, p.y + 5, p.w, p.h);
+  b.fillStyle = '#efe9d8'; b.fillRect(p.x, p.y, p.w, p.h);
+  speckle(b, p.x, p.y, p.w, p.h, p.w * p.h / 400, '120,100,60');
+  // 文鎮
+  const bw = p.w * 0.44;
+  b.fillStyle = 'rgba(0,0,0,.25)'; b.fillRect(p.x + (p.w - bw) / 2 + 2, p.y + 10, bw, 10);
+  const gr = b.createLinearGradient(0, p.y + 5, 0, p.y + 16);
+  gr.addColorStop(0, '#5a4a36'); gr.addColorStop(1, '#2a2118');
+  b.fillStyle = gr; b.fillRect(p.x + (p.w - bw) / 2, p.y + 5, bw, 10);
+  // 題字
+  brushText(b, 'うんち道', p.x + p.w * 0.105, p.y + p.h * 0.07, p.w * 0.105, '#1b1815', 23);
+}
+
+// ---- 積む ----
+function supportY(x, z, t, sMax) {
+  let y = t * 0.85 + (Math.hypot(x, z) > TRAY_R ? -0.05 : 0);
+  for (let i = 0, n = P.length; i < n; i++) {
+    const p = P[i]; if (p.s > sMax) break;
+    const dx = x - p.x, dz = z - p.z, R = (t + p.t) * 0.9, d2 = dx * dx + dz * dz;
+    if (d2 < R * R) { const c = p.y + Math.sqrt(R * R - d2) * 0.78; if (c > y) y = c; }
+  }
+  return y;
+}
+function deposit(x, z, t) {
+  if (P.length >= MAXR - 90) return;
+  let r = Math.hypot(x, z);
+  if (r > RCLAMP) { x *= RCLAMP / r; z *= RCLAMP / r; r = RCLAMP; }
+  sLen += DS;
+  let y = supportY(x, z, t, sLen - Math.max(3.5 * t, 0.3));
+  const n = P.length;
+  if (n) { const py = P[n - 1].y; y = Math.min(py + DS * 0.5, Math.max(py - DS * 1.0, y)); }
+  P.push({ x, y, z, t, s: sLen, w: t * t, blob: false });
+  if (r + t > ext) ext = r + t;
+  const a = Math.atan2(z, x);
+  if (lastAng !== null && r > 0.04) { let d = a - lastAng; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; angSum += d; }
+  lastAng = a; tubeDirty = true;
+}
+function pool(ex) {
+  const n = P.length; if (!n) return;
+  const p = P[n - 1];
+  const t = Math.min(0.78, Math.cbrt(p.t * p.t * p.t + ex * 3 / (4 * Math.PI)));
+  if (!p.blob) { p.blob = true; blobIdx.push(n - 1); }
+  p.t = t; p.w = t * t * t * (4 / 3) / DS;
+  const y = supportY(p.x, p.z, t, p.s - Math.max(3.5 * t, 0.3));
+  if (y > p.y) p.y = Math.min(y, p.y + 0.02);
+  const r = Math.hypot(p.x, p.z); if (r + t > ext) ext = r + t;
+  pooled += ex; tubeDirty = true;
+}
+function makeTail(f, dx, dz) {
+  const n0 = P.length; if (!n0) return;
+  const b = P[n0 - 1], t0 = Math.min(b.t, TMAX);
+  const Lh = clamp(0.06 + f * 0.085, 0.06, 1.3);
+  const m = Math.max(5, Math.ceil(Lh / 0.018));
+  const dk = clamp((Lh - 0.7) / 0.6, 0, 1);
+  const y0 = b.y + (b.t - t0) * 0.9 + t0 * 0.25;
+  for (let i = 1; i <= m; i++) {
+    const u = i / m, tt = Math.max(0.012, t0 * Math.pow(1 - u, 0.85));
+    const yo = Lh * u * (1 - 1.15 * dk * u), ln = Lh * (0.3 + 0.55 * dk) * u * u;
+    P.push({ x: b.x + dx * ln, y: y0 + yo, z: b.z + dz * ln, t: tt, s: Infinity, w: 0, blob: false });
+  }
+  tailFrom = n0; tubeDirty = tubeFull = true;
+}
+
+// ---- 座り（安定） ----
+function stability() {
+  const n = P.length; let maxY = 0, sumT = 0;
+  for (let i = 0; i < n; i++) { const p = P[i]; if (p.y + p.t > maxY) maxY = p.y + p.t; sumT += p.t; }
+  const best = { ratio: 0, h: 0, dx: 1, dz: 0, cx: 0, cz: 0, rho: 0.2, maxY };
+  if (n < 30) return best;
+  const band = Math.max(0.3, 3.2 * sumT / n);
+  for (let h = band; h < maxY - 0.1; h += 0.15) {
+    let am = 0, ax = 0, az = 0, sm = 0, sx = 0, sz = 0, cnt = 0;
+    for (let i = 0; i < n; i++) {
+      const p = P[i];
+      if (p.y > h) { am += p.w; ax += p.w * p.x; az += p.w * p.z; cnt++; }
+      else if (p.y > h - band) { sm += p.w; sx += p.w * p.x; sz += p.w * p.z; }
+    }
+    if (cnt < 8 || sm <= 0 || am <= 0) continue;
+    ax /= am; az /= am; sx /= sm; sz /= sm;
+    let rr = 0, tt = 0;
+    for (let i = 0; i < n; i++) {
+      const p = P[i];
+      if (p.y <= h && p.y > h - band) { rr += p.w * ((p.x - sx) ** 2 + (p.z - sz) ** 2); tt += p.w * p.t; }
+    }
+    const rho = Math.sqrt(rr / sm) + tt / sm * 0.6;
+    const off = Math.hypot(ax - sx, az - sz);
+    const ratio = Math.max(off / (rho * 1.08 + 0.05), (maxY - h) / (2 * rho) / 4.5);
+    if (ratio > best.ratio) {
+      best.ratio = ratio; best.h = h; best.cx = sx; best.cz = sz; best.rho = rho;
+      if (off > 0.02) { best.dx = (ax - sx) / off; best.dz = (az - sz) / off; } else { best.dx = NaN; }
+    }
+  }
+  return best;
+}
+
+// ---- 稽古の流れ ----
+function resetPiece() {
+  P = []; sLen = 0; tailFrom = -1; blobIdx = []; aR = 0; aCx = 0; aCz = 0; aLoop = false;
+  vS = 2; vL = 2; tCur = 0.25; carry = 0; vol = 0; pooled = 0;
+  angSum = 0; lastAng = null; vSum = vSq = vN = 0;
+  stab = { ratio: 0, maxY: 0 }; sinceCheck = 0; ext = 0; flick = 0;
+  fall = null; rot = 0; J = null; samples = []; moveQ = [];
+  builtN = 0; tubeDirty = tubeFull = true;
+  if (mat) { mat.roughness = 0.4; mat.clearcoat = 0.85; }
+}
+function mapPt(e) {
+  const px = e.clientX, py = e.clientY;
+  return { x: (px - W / 2) / L.Sd, z: (py - L.dy) / L.Sd, px, py };
+}
+// 直前の一周ぶんの点の平均を中心とみなす（等間隔の点なので一周で円の成分が打ち消し合う）
+function loopCenter() {
+  const n = P.length; if (n < 20) return null;
+  let turn = 0, sx = 0, sz = 0, c = 0, ph = null;
+  for (let i = n - 1; i > 0 && c < 900; i--) {
+    const h = Math.atan2(P[i].z - P[i - 1].z, P[i].x - P[i - 1].x);
+    if (ph !== null) { let d = h - ph; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; turn += d; }
+    ph = h; sx += P[i].x; sz += P[i].z; c++;
+    if (Math.abs(turn) >= TAU) return { x: sx / c, z: sz / c };
+  }
+  return null;
+}
+function steady(q, dt) {   // 半径の速い揺れ（楕円・でこぼこ）だけをならす。内へ巻く動きは残す
+  const lc = loopCenter();
+  if (lc) { const f = aLoop ? Math.min(1, dt / 0.25) : 1; aCx += (lc.x - aCx) * f; aCz += (lc.z - aCz) * f; aLoop = true; }
+  const k = aLoop ? 0.7 : 0.55, kr = 1 - Math.exp(-(dt / Math.max(1, q.length)) / 0.35);
+  for (const p of q) {
+    const dx = p.x - aCx, dz = p.z - aCz, r = Math.hypot(dx, dz);
+    aR = aR > 0 ? aR + (r - aR) * kr : r;
+    if (r > 0.03) { const nr = r + (aR - r) * k * clamp((r - 0.08) / 0.22, 0, 1); p.x = aCx + dx / r * nr; p.z = aCz + dz / r * nr; }
+  }
+}
+function stepDraw(dt) {
+  const q = moveQ; moveQ = [];
+  if (!started) {
+    if (q.length) {
+      const lp = q[q.length - 1];
+      if (Math.hypot(lp.px - downPx.x, lp.py - downPx.y) > 4) { started = true; deposit(cur.x, cur.z, tCur); }
+    }
+    if (!started) { holdT += dt; return; }
+  }
+  steady(q, dt);
+  let len = 0, pv = cur;
+  for (const p of q) { len += Math.hypot(p.x - pv.x, p.z - pv.z); pv = p; }
+  const vI = len / dt;
+  vS += (vI - vS) * Math.min(1, dt / 0.10); vL += (vI - vL) * Math.min(1, dt / 0.9);
+  vSum += vS; vSq += vS * vS; vN++;
+  const dV = Q * dt; vol += dV;
+  const tT = clamp(Math.sqrt(Q / (Math.PI * Math.max(vS, 0.01))), TMIN, TMAX);
+  tCur += (tT - tCur) * Math.min(1, dt / 0.08);
+  pv = cur;
+  for (const p of q) {
+    let d = Math.hypot(p.x - pv.x, p.z - pv.z);
+    while (d > 0 && carry + d >= DS) {
+      const f = (DS - carry) / d;
+      pv = { x: pv.x + (p.x - pv.x) * f, z: pv.z + (p.z - pv.z) * f };
+      d = Math.hypot(p.x - pv.x, p.z - pv.z); carry = 0;
+      deposit(pv.x, pv.z, tCur); sinceCheck++;
+    }
+    carry += d; pv = p;
+  }
+  cur = pv;
+  const pooling = vS < VPOOL;
+  if (pooling) pool(dV * (1 - vS / VPOOL));
+  if (sinceCheck >= 10 || pooling) {
+    sinceCheck = 0; stab = stability();
+    if (stab.ratio >= 1 || stab.maxY > 3.0) { startFall(); return; }
+  }
+  if (vol >= VMAX) release(true);
+}
+function release(auto) {
+  if (state !== 'draw') return;
+  pid = null;
+  if (!started) { if (holdT >= 2.5) finish(false, true); else state = 'idle'; return; }
+  let f = 0, dx = 0, dz = 0; const now = performance.now();
+  const rec = samples.filter(s => now - s.t < 150);
+  if (!auto && rec.length >= 2) {
+    const a = rec[0], b = rec[rec.length - 1], d = (b.t - a.t) / 1000;
+    if (d > 0.012 && now - b.t < 110) {
+      const vx = (b.px - a.px) / d / L.Sd, vy = (b.py - a.py) / d / L.Sd;
+      f = Math.hypot(vx, vy); if (f > 0.01) { dx = vx / f; dz = vy / f; }
+      f *= 1.3;   // 払いの感度
+    }
+  }
+  flick = f; stab = stability(); makeTail(f, dx, dz);
+  finish(false, false);
+}
+function startFall() {
+  const s = stab; let dx = s.dx, dz = s.dz;
+  if (!isFinite(dx) || !isFinite(dz)) { const a = Math.random() * TAU; dx = Math.cos(a); dz = Math.sin(a); }
+  const h = s.ratio >= 1 ? s.h : Math.max(0.4, s.maxY * 0.3);
+  const px = s.cx + dx * s.rho, pz = s.cz + dz * s.rho;
+  for (const p of P) {
+    if (p.y > h) {
+      const rx = p.x - px, rz = p.z - pz;
+      p.f = { u: rx * dx + rz * dz, wl: -rx * dz + rz * dx, hh: p.y - h, n: 1 + (Math.random() - 0.5) * 0.1 };
+    }
+  }
+  fall = { t: 0, h, dx, dz, px, pz, done: false };
+  state = 'fall'; pid = null;
+}
+function stepFall(dt) {
+  fall.t += dt; viewK = Math.min(1, viewK + dt / 1.1);
+  const a = clamp((fall.t - 0.25) / 0.75, 0, 1), e = a * a, ang = e * Math.PI / 2, c = Math.cos(ang), s = Math.sin(ang);
+  for (const p of P) {
+    const f = p.f; if (!f) continue;
+    const u = (f.u * c + f.hh * s) * (1 + (f.n - 1) * e), hr = -f.u * s + f.hh * c;
+    p.x = fall.px + fall.dx * u - fall.dz * f.wl; p.z = fall.pz + fall.dz * u + fall.dx * f.wl;
+    const yFin = p.t * 0.85 + Math.max(0, -f.u) * 0.7 + (Math.hypot(p.x, p.z) > TRAY_R ? -0.05 : 0);
+    const yRot = fall.h + hr;
+    p.y = yRot + (yFin - yRot) * e * e;
+  }
+  tubeDirty = tubeFull = true;
+  if (a >= 1 && !fall.done) { fall.done = true; shake = 1; thud(); }
+  if (fall.t > 1.5) { for (const p of P) delete p.f; finish(true, false); }
+}
+function finish(collapsed, nothing) {
+  J = judge(collapsed, nothing);
+  const before = rankOf(save.pts || 0);
+  save.count = (save.count || 0) + 1; save.pts = (save.pts || 0) + J.total; save.best = Math.max(save.best || 0, J.total);
+  store(save);
+  J.rank = rankOf(save.pts); J.count = save.count; J.promoted = J.rank !== before;
+  J.seed = 1 + save.count * 7919 + J.total * 31;
+  updateRank();
+  const gl = J.sc.tsuya / 100;      // 艶の出来が釉の照りに出る
+  mat.roughness = lerp(0.62, 0.3, gl); mat.clearcoat = lerp(0.35, 1, gl);
+  state = 'show'; showT = 0; rot = 0;
+  if (!collapsed) bell();
+}
+function stepShow(dt) {
+  showT += dt;
+  if (REDUCED) { viewK = 1; if (showT > 0.9) openResult(); return; }
+  viewK = Math.min(1, viewK + dt / 1.3);
+  const u = clamp((showT - 1.7) / 4.2, 0, 1);
+  rot = TAU * ease(u);
+  if (showT > 1.7 + 4.2 + 0.5) openResult();
+}
+
+// ---- 講評 ----
+function kan(n) {
+  n = Math.max(0, Math.round(n)); if (n === 0) return '零';
+  const d = '〇一二三四五六七八九', u = ['', '十', '百', '千']; let s = '', i = 0;
+  while (n > 0 && i < 4) { const k = n % 10; if (k) s = ((k > 1 || i === 0) ? d[k] : '') + u[i] + s; n = Math.floor(n / 10); i++; }
+  return s;
+}
+const RANKS = [[0, '入門'], [120, '初心'], [350, '初段'], [700, '二段'], [1200, '三段'], [1900, '師範代'], [2800, '師範'], [4000, '家元']];
+function rankOf(pts) { let r = RANKS[0][1]; for (const [t, nm] of RANKS) if (pts >= t) r = nm; return r; }
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function kireScore(f) { if (f < 4.2) return 10 + 90 * Math.pow(f / 4.2, 2.2); if (f <= 6.4) return 100; return Math.max(8, 100 - (f - 6.4) * 12); }
+
+function judge(collapsed, nothing) {
+  if (nothing) {
+    return { sc: { maki: 0, tsuya: 0, kire: 0, suwari: 0, wabi: 100 }, total: 20, kata: '草', mei: '無',
+      comment: ['出さぬという選択。', 'それもまた道。'] };
+  }
+  const n = tailFrom >= 0 ? tailFrom : P.length;
+  let sumT = 0, sumT2 = 0, cx = 0, cz = 0, wsum = 0, out = 0, maxY = 0;
+  for (let i = 0; i < P.length; i++) { const p = P[i]; if (p.y + p.t > maxY) maxY = p.y + p.t; }
+  for (let i = 0; i < n; i++) {
+    const p = P[i]; sumT += p.t; sumT2 += p.t * p.t; cx += p.w * p.x; cz += p.w * p.z; wsum += p.w;
+    if (Math.hypot(p.x, p.z) > TRAY_R) out++;
+  }
+  const meanT = sumT / n, cvT = Math.sqrt(Math.max(0, sumT2 / n - meanT * meanT)) / meanT;
+  cx /= wsum; cz /= wsum;
+  let wd = 0, topR = 0, topN = 0;
+  for (let i = 0; i < n; i++) {
+    const p = P[i], d = Math.hypot(p.x - cx, p.z - cz) + p.t; if (d > wd) wd = d;
+    if (p.y > maxY * 0.6) { topR += Math.hypot(p.x - cx, p.z - cz); topN++; }
+  }
+  topR = topN ? topR / topN : 0;
+  const rs = []; for (let i = 0; i < n; i += 8) rs.push(Math.hypot(P[i].x, P[i].z));
+  let rough = 0; for (let i = 1; i < rs.length - 1; i++) rough += (rs[i - 1] - 2 * rs[i] + rs[i + 1]) ** 2;
+  rough = rs.length > 2 ? Math.sqrt(rough / (rs.length - 2)) : 0.1;
+  const turns = Math.abs(angSum) / TAU;
+  // 丸さ：一周ぶんの窓で半径のゆっくりした変化を除き、残った歪みを見る
+  let oval = 0.3, shrink = 0, inward = 0;
+  {
+    const idx = []; for (let i = 0; i < n; i += 3) idx.push(i);
+    const th = [], rr = []; let acc = 0, prev = null, rsum = 0;
+    for (const i of idx) {
+      const a = Math.atan2(P[i].z - cz, P[i].x - cx), r = Math.hypot(P[i].x - cx, P[i].z - cz);
+      if (prev !== null) { let d = a - prev; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; acc += d; }
+      prev = a; th.push(acc); rr.push(r); rsum += r;
+    }
+    const mr = rsum / Math.max(1, rr.length);
+    if (rr.length > 12 && mr > 0.05) {
+      let e2 = 0, cnt = 0; const trend = [];
+      for (let a = 0; a < rr.length; a++) {
+        let m = 0, c = 0;
+        for (let b = 0; b < rr.length; b++) if (Math.abs(th[b] - th[a]) < Math.PI) { m += rr[b]; c++; }
+        trend.push(m / c);
+        if (c > 4) { e2 += (rr[a] - m / c) ** 2; cnt++; }
+      }
+      if (cnt) oval = Math.sqrt(e2 / cnt) / mr;
+      // すぼまり方：半周ごとの半径の減り方が、内向きに一定か
+      const sg = th[th.length - 1] >= 0 ? 1 : -1, T = [trend[0]];
+      for (let a = 1, nx = Math.PI; a < trend.length; a++) if (th[a] * sg >= nx) { T.push(trend[a]); nx += Math.PI; }
+      if (T.length >= 3) {
+        const R0 = T[0], R1 = T[T.length - 1], total = R0 - R1, dn = T.length - 1;
+        inward = clamp((1 - R1 / Math.max(R0, 0.05)) / 0.6, 0, 1);
+        // 描き始めの半周（測り方の偏り）と、中心で巻き終える部分は一定さの判定から外す
+        const U = T.slice(1); while (U.length > 3 && U[U.length - 2] < 0.22) U.pop();
+        const ut = U.length >= 3 ? U[0] - U[U.length - 1] : 0, un = U.length - 1;
+        if (total > 0.02 && ut > 0.02) {
+          let back = 0, dv = 0; const md = ut / un;
+          for (let k = 0; k < un; k++) { const d = U[k] - U[k + 1]; if (d < 0) back -= d; dv += (d - md) ** 2; }
+          const cvD = Math.sqrt(dv / un) / md;
+          shrink = clamp(1 - back / ut * 2, 0, 1) * clamp(1 - cvD / 1.2, 0, 1);
+        }
+      }
+    }
+  }
+  const outFrac = out / n, poolFrac = pooled / Math.max(vol, 1e-6);
+  const aspect = maxY / Math.max(0.1, wd * 2), used = vol / VMAX;
+  const mv = vN ? vSum / vN : 1, cvV = vN ? Math.sqrt(Math.max(0, vSq / vN - mv * mv)) / Math.max(mv, 0.05) : 1;
+  // どれも「理想に近ければ満点」になるよう、上に余裕を持たせている
+  let maki = 100 * (0.40 * clamp(shrink / 0.82, 0, 1) + 0.25 * clamp(inward / 0.9, 0, 1) ** 2 + 0.35 * clamp(1 - Math.max(0, oval - 0.06) / 0.2, 0, 1)) * clamp(turns / 1.5, 0, 1);
+  let tsuya = 100 * clamp(1 - cvV / 1.0, 0, 1) * (1 - 0.7 * clamp(poolFrac * 1.5, 0, 1));
+  // 切れの位置：穂先（巻き終わり）が作品の真ん中にあるか。0.08以内で満点、0.38離れると最低
+  const tb = P[Math.max(0, n - 1)], tipOff = Math.hypot(tb.x - cx, tb.z - cz);
+  const tipF = clamp(1 - Math.max(0, tipOff - 0.2) / 0.35, 0, 1);
+  let kire = kireScore(flick) * (0.2 + 0.8 * tipF);
+  let suwari = 100 * (0.45 * clamp(1 - Math.max(0, Math.hypot(cx, cz) - 0.04) / 0.3, 0, 1) + 0.55 * clamp(1 - Math.max(0, stab.ratio - 0.18) / 0.5, 0, 1)) * (1 - outFrac);
+  let wabi = 100 * (0.6 * clamp(1 - Math.abs(used - 0.67) / 0.67, 0, 1) + 0.4 * clamp(1 - Math.abs(aspect - 1), 0, 1));
+  if (collapsed) { maki *= 0.4; kire = 0; suwari = 3; wabi = Math.max(wabi, 72); }
+  const sc = { maki: Math.round(maki), tsuya: Math.round(tsuya), kire: Math.round(kire), suwari: Math.round(suwari), wabi: Math.round(wabi) };
+  const total = Math.round((sc.maki + sc.kire + sc.suwari) / 3);   // 見える三つだけで決める。艶は釉の照りにだけ出る
+  const kata = collapsed ? '草' : total >= 75 ? '真' : total >= 55 ? '行' : '草';
+  const hollow = turns >= 3 && topR > 0.3 && aspect > 0.5;
+  // 銘：変化球（形や事故で決まる）を先に見て、当てはまらなければ点数の一列から選ぶ
+  let mei;
+  if (collapsed) mei = outFrac > 0.12 || ext > TRAY_R + 0.2 ? pick(['土砂', '落城', '大脱走']) : pick(['山崩れ', '夢の跡', '諸行無常', '将棋倒し']);
+  else if (outFrac > 0.12) mei = pick(['はみ出し', '家出', '場外']);
+  else if (total >= 90) mei = 'うんち';
+  else if (turns < 2 && poolFrac > 0.4) mei = pick(['大福', 'だるま', '岩', 'まんじゅう']);
+  else if (turns < 1.5) mei = pick(['三日月', 'まゆ毛', '一文字', 'バナナ']);
+  else if (aspect > 2.0) mei = pick(['竹', 'のろし', '電柱', 'ろうそく']);
+  else if (hollow) mei = pick(['井戸', '土管', 'ちくわ', '煙突']);
+  else if (aspect < 0.36) mei = pick(['座布団', 'せんべい', '蚊取り線香', 'ピザ']);
+  else if (meanT < 0.155) mei = pick(['そうめん', '糸', '毛糸玉']);
+  else if (flick > 11) mei = pick(['寝ぐせ', '流れ星', 'アホ毛']);
+  else if (total >= 83) mei = '名人芸';
+  else if (total >= 75) mei = 'あと一歩';
+  else if (total >= 65) mei = '伸びしろ';
+  else if (total >= 55) mei = 'ふつう';
+  else if (total >= 40) mei = '寝起き';
+  else mei = '事故';
+  // 講評：点に見合った口調。上手ければ褒め、中ほどは褒めてから一つだけ、低ければ指摘
+  const keys = ['maki', 'kire', 'suwari'];   // 表に出す見所。艶は隠し味として点にだけ効く
+  const bestK = keys.reduce((a, b) => sc[b] > sc[a] ? b : a);
+  let worstK = keys.reduce((a, b) => sc[b] < sc[a] ? b : a);
+  if (worstK === bestK) worstK = keys.find(k => k !== bestK);
+  const kireFix = tipF < 0.6 ? 'tip' : flick > 6.4 ? 'over' : 'under';
+  let comment;
+  if (collapsed) comment = ['崩れもまた景色。', '草の型として受け取ろう。'];
+  else if (mei === 'うんち') comment = ['うんち。'];
+  else if (total >= 75) {
+    comment = { maki: ['見事なすぼまり。', '少しずつ、内へ。'], kire: ['見事な切れ。', '去り際を心得ておる。'],
+      suwari: ['どっしりと座っておる。', '動かぬものは美しい。'] }[bestK];
+  } else if (total >= 55) {
+    const good = { maki: '巻きはよい。', kire: '切れはよい。', suwari: '座りはよい。' }[bestK];
+    const next = { maki: 'あとは内へ少しずつ。', suwari: 'あとは軸を真ん中に。',
+      kire: { tip: 'あとは締めを真ん中で。', over: 'あとは払いを控えよ。', under: 'あとは去り際に払いを。' }[kireFix] }[worstK];
+    comment = [good, next];
+  } else {
+    comment = { maki: ['巻きが乱れておる。', '内へ、少しずつ。'], suwari: ['座りが浮いておる。', 'まず己が座れ。'],
+      kire: { tip: ['穂先がずれておる。', '締めは真ん中で。'], over: ['払いが過ぎる。', '去り際は短く。'], under: ['終わりを惜しんだな。', '未練は断て。'] }[kireFix] }[worstK];
+  }
+  return { sc, total, kata, mei, comment, dbg: { tipOff, oval, shrink, inward, turns, cvT, rough, cvV, poolFrac, aspect, used, outFrac, flick, ratio: stab.ratio } };
+}
+
+// ---- 描画 ----
+function render() {
+  const e = ease(viewK);
+  const room = e > 0.5; if (room !== isRoom) { isRoom = room; document.body.classList.toggle('room', room); }
+  let ox = 0, oy = 0;
+  if (shake > 0.01) { ox = (Math.random() - 0.5) * 9 * shake; oy = (Math.random() - 0.5) * 9 * shake; shake *= 0.86; } else shake = 0;
+  // 半紙
+  const po = 1 - clamp(e * 1.5, 0, 1);
+  if (po > 0) {
+    pc.style.display = 'block'; pc.style.opacity = po.toFixed(3);
+    pg.setTransform(DPR, 0, 0, DPR, 0, 0); pg.drawImage(paperBg, 0, 0, W, H);
+    if (state === 'idle') {
+      pg.strokeStyle = 'rgba(27,24,21,.10)'; pg.lineWidth = L.Sd * 0.07; pg.lineCap = 'round';
+      pg.beginPath(); pg.arc(W / 2, L.dy, L.Sd * 0.62, -0.5, 5.3); pg.stroke();
+      pg.textAlign = 'center'; pg.textBaseline = 'middle';
+      pg.fillStyle = 'rgba(27,24,21,.66)'; pg.font = `400 ${L.Sd * 0.19}px ${DISPLAY}`;
+      pg.fillText('円を描く', W / 2, L.dy - L.Sd * 0.05);
+      pg.fillStyle = 'rgba(27,24,21,.48)'; pg.font = `500 ${Math.max(11, L.Sd * 0.09)}px ${BODY}`;
+      pg.fillText('内へ、ゆっくり', W / 2, L.dy + L.Sd * 0.15);
+    }
+    const p = L.paper, w = Math.max(8, p.w * 0.024), x = p.x + p.w - Math.max(16, p.w * 0.05), y0 = p.y + p.h * 0.27, hm = p.h * 0.46;
+    const h = hm * (1 - clamp(vol / VMAX, 0, 1));
+    pg.fillStyle = 'rgba(27,24,21,.08)'; pg.fillRect(x - w / 2, y0, w, hm);
+    pg.fillStyle = '#1b1815'; pg.fillRect(x - w / 2, y0 + hm - h, w, h);
+    pg.fillStyle = '#a58a4a'; pg.fillRect(x - w * 0.12, y0 + hm - h + 4, w * 0.24, Math.max(0, Math.min(h - 8, hm * 0.25)));
+  } else if (pc.style.display !== 'none') pc.style.display = 'none';
+  // 床の間
+  if (state === 'show' || stageDirty) {
+    stageDirty = false;
+    g.setTransform(DPR, 0, 0, DPR, 0, 0); g.drawImage(bg, 0, 0, W, H);
+    if (state === 'show' && J && showT > 1.5) {
+      const m = J.mei, size = Math.min(L.cw * 0.13, L.horizon * 0.78 / (m.length * 1.04));
+      g.globalAlpha = clamp((showT - 1.5) / 0.8, 0, 1);
+      brushText(g, m, Math.min(W - size * 0.8, L.cx + L.cw * 0.3), L.horizon * 0.12, size, '#1b1815', J.seed);
+      g.globalAlpha = 1; stageDirty = true;
+    }
+  }
+  // 立体
+  if (!renderer || state === 'result') return;
+  if (tubeDirty) { buildTube(tubeFull); tubeDirty = tubeFull = false; }
+  syncBlobs();
+  let sx = 0, sz = 0;
+  if (state === 'draw' && stab.ratio > 0.55 && !REDUCED) {
+    const a = clamp((stab.ratio - 0.55) / 0.45, 0, 1) * 0.035 * Math.sin(time * 6);
+    const dx = isFinite(stab.dx) ? stab.dx : 1, dz = isFinite(stab.dx) ? stab.dz : 0;
+    sx = dz * a; sz = -dx * a;
+  }
+  group.rotation.set(sx, rot, sz);
+  setStage(e);
+  applyCamera(lerp(Math.PI / 2, PHI, e), W / 2 + ox, lerp(L.dy, L.trayY, e) + oy, lerp(L.Sd, L.S, e));
+  renderer.render(scene, cam);
+}
+
+// ---- 掛け軸（結果画像） ----
+function fontsReady(text) {
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  const p = Promise.all([document.fonts.load(`40px "Yuji Mai"`, text), document.fonts.load(`500 24px "Shippori Mincho"`, text)]).catch(() => {});
+  return Promise.race([p, new Promise(r => setTimeout(r, 1500))]);
+}
+function shotPiece(k, tx, ty, S) {   // 立体を掛け軸の紙へ写す
+  if (!renderer) return;
+  const Ss = Math.min(W * 0.24, H * 0.2), ox = W / 2, oy = H * 0.72, pr = renderer.getPixelRatio();
+  group.rotation.set(0, sYaw, 0); setStage(1); catchFloor.visible = false; applyCamera(sPhi, ox, oy, Ss);
+  renderer.render(scene, cam);
+  const x0 = -2.05, x1 = 2.05, up = 2.75, dn = 0.75;
+  k.drawImage(glc, (ox + x0 * Ss) * pr, (oy - up * Ss) * pr, (x1 - x0) * Ss * pr, (up + dn) * Ss * pr,
+    tx + x0 * S, ty - up * S, (x1 - x0) * S, (up + dn) * S);
+}
+function renderScroll() {
+  scrollBg.width = scrollFg.width = scrollCv.width = 720; scrollBg.height = scrollFg.height = scrollCv.height = 1280;
+  let k = scrollBg.getContext('2d');
+  k.fillStyle = '#b9af8f'; k.fillRect(0, 0, 720, 1280); speckle(k, 0, 0, 720, 1280, 1800, '60,50,30');
+  k.fillStyle = 'rgba(0,0,0,.18)'; k.fillRect(100, 76, 540, 1124);
+  k.strokeStyle = '#3a2f25'; k.lineWidth = 2; k.beginPath(); k.moveTo(210, 60); k.lineTo(360, 14); k.lineTo(510, 60); k.stroke();
+  k.fillStyle = '#2a1c12'; k.fillRect(84, 58, 552, 10);
+  k.fillStyle = '#2c3945'; k.fillRect(90, 66, 540, 1118);
+  k.fillStyle = 'rgba(235,227,208,.08)';
+  for (let y = 80, r = 0; y < 1176; y += 22, r++) for (let x = 102 + (r % 2) * 11; x < 622; x += 22) k.fillRect(x, y, 2, 2);
+  k.fillStyle = '#a58a4a'; k.fillRect(130, 190, 460, 24); k.fillRect(130, 1016, 460, 24);
+  k.fillStyle = '#ece5d3'; k.fillRect(130, 214, 460, 802); speckle(k, 130, 214, 460, 802, 900, '120,100,60');
+  k.fillStyle = '#2a1c12'; k.fillRect(72, 1180, 576, 22);
+  k.fillStyle = '#8b7a55'; k.fillRect(72, 1180, 10, 22); k.fillRect(638, 1180, 10, 22);
+  k = scrollFg.getContext('2d'); k.clearRect(0, 0, 720, 1280);
+  // 銘と型
+  const m = J.mei, ms = m.length <= 2 ? 118 : m.length === 3 ? 100 : m.length === 4 ? 84 : m.length === 5 ? 70 : 60;
+  k.fillStyle = 'rgba(27,24,21,.55)'; vtext(k, '銘', 512, 236, 24, BODY, 500);
+  const yEnd = brushText(k, m, 512, 280, ms, '#1b1815', J.seed);
+  k.fillStyle = 'rgba(27,24,21,.82)'; vtext(k, `${J.kata}の型　${kan(J.total)}点`, 512, yEnd + 14, 30, DISPLAY, 400);
+  // 講評
+  k.fillStyle = 'rgba(27,24,21,.82)';
+  vtext(k, J.comment[0], 214, 250, 23, BODY, 500); vtext(k, J.comment[1] || '', 180, 292, 23, BODY, 500);
+  // 落款
+  k.fillStyle = '#b23a2b'; k.beginPath(); k.roundRect ? k.roundRect(152, 690, 58, 58, 5) : k.rect(152, 690, 58, 58); k.fill();
+  k.fillStyle = '#f0e6d2'; k.font = `400 23px ${DISPLAY}`; k.textAlign = 'center'; k.textBaseline = 'middle';
+  k.fillText('う', 195, 706); k.fillText('ん', 195, 733); k.fillText('ち', 167, 706); k.fillText('道', 167, 733);
+  // 見所
+  k.fillStyle = 'rgba(27,24,21,.25)'; k.fillRect(170, 908, 380, 1);
+  const s = J.sc, f = v => kan(Math.round(v / 10));
+  k.fillStyle = 'rgba(27,24,21,.8)'; k.font = `500 24px ${BODY}`;
+  k.fillText(`巻き ${f(s.maki)}　　切れ ${f(s.kire)}　　座り ${f(s.suwari)}`, 360, 944);
+  k.fillStyle = 'rgba(27,24,21,.6)'; k.font = `500 18px ${BODY}`;
+  k.fillText(`${J.rank}　稽古${kan(J.count)}回`, 360, 984);
+}
+function composeScroll() {
+  const k = scrollCv.getContext('2d');
+  k.drawImage(scrollBg, 0, 0);
+  k.save(); k.beginPath(); k.rect(130, 214, 460, 690); k.clip(); shotPiece(k, 345, 808, 124); k.restore();
+  k.drawImage(scrollFg, 0, 0);
+  scrollDirty = false; shareBlob = null; clearTimeout(blobTimer);
+  blobTimer = setTimeout(() => scrollCv.toBlob(b => { shareBlob = b; }, 'image/png'), 300);
+}
+const hint = () => J && J.promoted ? `${J.rank}に昇段　なぞって回す` : 'なぞって回す';
+function flash(msg) { $('promo').textContent = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => { $('promo').textContent = hint(); }, 3800); }
+function shareText() { return `うんち道　本日の一巻き\n銘「${J.mei}」　${J.kata}の型　${kan(J.total)}点\n#うんち道` + (SHARE_URL ? '\n' + SHARE_URL : ''); }
+async function openResult() {
+  if (state !== 'show') return;
+  state = 'result'; rot = 0; viewK = 1; stageDirty = true;
+  await fontsReady(J.mei + J.comment.join('') + J.rank + '銘真行草の型点巻艶切座侘零〇一二三四五六七八九十百千稽古回うんち道');
+  if (tubeDirty) { buildTube(true); tubeDirty = tubeFull = false; }
+  syncBlobs(); renderScroll();
+  sYaw = 0; sPhi = PHI; sVel = 0; sDrag = null; glc.style.visibility = 'hidden'; composeScroll();
+  scrollCv.setAttribute('aria-label', `銘「${J.mei}」　${J.kata}の型　${kan(J.total)}点。${J.comment.join('')}`);
+  $('promo').textContent = hint();
+  $('tweet').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText());
+  $('result').classList.add('on');
+  $('again').focus({ preventScroll: true });
+}
+
+// ---- 記録 ----
+function loadSave() { try { return JSON.parse(localStorage.getItem('unchido') || '{}') || {}; } catch (e) { return {}; } }
+function store(o) { try { localStorage.setItem('unchido', JSON.stringify(o)); } catch (e) {} }
+function updateRank() { $('rank').textContent = `${rankOf(save.pts || 0)}　稽古${kan(save.count || 0)}回`; }
+
+// ---- 音 ----
+let AC = null, master = null, rubGain = null, rubFilter = null, soundOn = true;
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume().catch(() => {}); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = soundOn ? 0.9 : 0; master.connect(AC.destination);
+    const buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    rubFilter = AC.createBiquadFilter(); rubFilter.type = 'bandpass'; rubFilter.frequency.value = 700; rubFilter.Q.value = 0.8;
+    rubGain = AC.createGain(); rubGain.gain.value = 0;
+    src.connect(rubFilter); rubFilter.connect(rubGain); rubGain.connect(master); src.start();
+    AC._noise = buf;
+    setTimeout(shishi, 9000);
+  } catch (e) { AC = null; }
+}
+function tone(f, t0, dur, vol, type) {
+  const o = AC.createOscillator(), gn = AC.createGain(); o.type = type || 'sine'; o.frequency.value = f;
+  gn.gain.setValueAtTime(0, t0); gn.gain.linearRampToValueAtTime(vol, t0 + 0.006); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(gn); gn.connect(master); o.start(t0); o.stop(t0 + dur + 0.05); return o;
+}
+function bell() {
+  if (!AC) return; const t = AC.currentTime + 0.02, f = 528;
+  tone(f, t, 4.2, 0.16); tone(f * 1.004, t, 4.0, 0.10); tone(f * 2.76, t, 2.2, 0.07); tone(f * 5.4, t, 1.0, 0.03);
+}
+function burst(t0, dur, vol, freq, type) {
+  const s = AC.createBufferSource(); s.buffer = AC._noise;
+  const fl = AC.createBiquadFilter(); fl.type = type; fl.frequency.value = freq;
+  const gn = AC.createGain(); gn.gain.setValueAtTime(vol, t0); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  s.connect(fl); fl.connect(gn); gn.connect(master); s.start(t0, Math.random()); s.stop(t0 + dur + 0.05);
+}
+function thud() {
+  if (!AC) return; const t = AC.currentTime + 0.01;
+  const o = tone(110, t, 0.4, 0.4); o.frequency.exponentialRampToValueAtTime(42, t + 0.3);
+  burst(t, 0.3, 0.25, 400, 'lowpass');
+}
+function shishi() {
+  if (AC && soundOn && !document.hidden && AC.state === 'running') {
+    const t = AC.currentTime + 0.01;
+    const o = tone(430, t, 0.16, 0.10, 'triangle'); o.frequency.exponentialRampToValueAtTime(300, t + 0.1);
+    burst(t, 0.05, 0.06, 1800, 'bandpass');
+  }
+  setTimeout(shishi, 13000 + Math.random() * 9000);
+}
+function audioFrame() {
+  if (!AC || !rubGain) return;
+  const on = state === 'draw' && started;
+  rubGain.gain.setTargetAtTime(on ? clamp(0.012 + vS * 0.012, 0, 0.085) : 0, AC.currentTime, 0.05);
+  rubFilter.frequency.setTargetAtTime(480 + clamp(vS, 0, 10) * 190, AC.currentTime, 0.08);
+}
+
+// ---- 入力 ----
+glc.addEventListener('pointerdown', e => {
+  if (e.button !== undefined && e.button > 0) return;
+  initAudio();
+  if (state === 'show') { openResult(); return; }
+  if (state !== 'idle') return;
+  e.preventDefault();
+  try { glc.setPointerCapture(e.pointerId); } catch (err) {}
+  pid = e.pointerId;
+  resetPiece(); viewK = 0;
+  cur = mapPt(e); downPx = { x: cur.px, y: cur.py };
+  started = false; holdT = 0; state = 'draw';
+  samples = [{ t: performance.now(), px: cur.px, py: cur.py }];
+});
+glc.addEventListener('pointermove', e => {
+  if (state !== 'draw' || e.pointerId !== pid) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+  for (const ev of (evs && evs.length ? evs : [e])) moveQ.push(mapPt(ev));
+  const lp = moveQ[moveQ.length - 1];
+  samples.push({ t: performance.now(), px: lp.px, py: lp.py });
+  if (samples.length > 40) samples.splice(0, 20);
+});
+const up = e => { if (e.pointerId === pid) release(false); };
+glc.addEventListener('pointerup', up); glc.addEventListener('pointercancel', up);
+glc.addEventListener('contextmenu', e => e.preventDefault());
+
+const again = () => { $('result').classList.remove('on'); glc.style.visibility = ''; sDrag = null; sVel = 0; resetPiece(); viewK = 0; state = 'idle'; stageDirty = true; };
+$('again').addEventListener('click', again);
+scrollCv.addEventListener('pointerdown', e => {
+  if (state !== 'result') return;
+  e.preventDefault(); try { scrollCv.setPointerCapture(e.pointerId); } catch (err) {}
+  sDrag = { id: e.pointerId, x: e.clientX, y: e.clientY }; sVel = 0; scrollCv.style.cursor = 'grabbing';
+});
+scrollCv.addEventListener('pointermove', e => {
+  if (!sDrag || e.pointerId !== sDrag.id) return;
+  const k = 720 / (scrollCv.getBoundingClientRect().width || 720);
+  const dx = (e.clientX - sDrag.x) * k, dy = (e.clientY - sDrag.y) * k;
+  sDrag.x = e.clientX; sDrag.y = e.clientY;
+  sYaw += dx * 0.011; sVel = dx * 0.011 * 60; sPhi = clamp(sPhi + dy * 0.004, 0.12, 0.58); scrollDirty = true;
+});
+const sUp = e => { if (sDrag && e.pointerId === sDrag.id) { sDrag = null; scrollCv.style.cursor = ''; } };
+scrollCv.addEventListener('pointerup', sUp); scrollCv.addEventListener('pointercancel', sUp);
+// Xに投稿：スマホは共有シートで画像ごと、PCは画像をコピーしてから投稿画面へ
+$('tweet').addEventListener('click', e => {
+  if (!J) return;
+  const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if (touch && shareBlob && navigator.canShare) {
+    const file = new File([shareBlob], `unchido-${J.total}.png`, { type: 'image/png' });
+    let ok = false; try { ok = navigator.canShare({ files: [file] }); } catch (err) {}
+    if (ok) { e.preventDefault(); navigator.share({ files: [file], text: shareText() }).catch(() => {}); return; }
+  }
+  try {
+    const blob = shareBlob ? Promise.resolve(shareBlob) : new Promise(r => scrollCv.toBlob(r, 'image/png'));
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      .then(() => flash('画像をコピーした　投稿欄に貼り付けて'))
+      .catch(() => flash('画像を保存してから添付して'));
+  } catch (err) { flash('画像を保存してから添付して'); }
+});
+$('snd').addEventListener('click', () => {
+  soundOn = !soundOn; $('snd').setAttribute('aria-pressed', String(soundOn));
+  initAudio(); if (master) master.gain.value = soundOn ? 0.9 : 0;
+});
+let DL = null;
+try { if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { DL = d; }).catch(() => {}); } catch (e) {}
+$('save').addEventListener('click', async () => {
+  const btn = $('save');
+  const blob = await new Promise(r => scrollCv.toBlob(r, 'image/png'));
+  if (!blob) return;
+  const name = `うんち道-${J ? J.mei : '一巻き'}.png`;
+  if (DL) {
+    try { await DL.save({ filename: name, data: blob }); btn.textContent = '保存した'; }
+    catch (err) { btn.textContent = err && err.code === 'declined' ? '画像を保存' : '保存できなかった'; }
+  } else {
+    try { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch (err) {}
+    btn.textContent = '保存した';
+  }
+  setTimeout(() => { btn.textContent = '画像を保存'; }, 2600);
+});
+
+// ---- 進行 ----
+let last = performance.now();
+function frame(now) {
+  const dt = clamp((now - last) / 1000, 0.001, 0.05); last = now; time += dt;
+  if (state === 'draw') stepDraw(dt);
+  else if (state === 'fall') stepFall(dt);
+  else if (state === 'show') stepShow(dt);
+  else if (state === 'result') {
+    if (!sDrag && Math.abs(sVel) > 0.01) { sYaw += sVel * dt; sVel *= Math.pow(0.04, dt); scrollDirty = true; }
+    if (scrollDirty) composeScroll();
+  }
+  audioFrame(); render();
+  requestAnimationFrame(frame);
+}
+try { if (!window.THREE) throw new Error('three'); init3D(); } catch (err) { renderer = null; $('nogl').style.display = 'flex'; }
+layout(); updateRank();
+window.addEventListener('resize', layout);
+fontsReady('うんち道円を描く内へ、ゆっくり').then(() => { buildStatic(); buildPaper(); stageDirty = true; });
+window.__unchido = { L, get state() { return state; }, get J() { return J; }, get n() { return P.length; }, get stab() { return stab; } };
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
