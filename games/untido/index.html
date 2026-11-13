@@ -106,7 +106,7 @@ let fall = null, showT = 0, rot = 0, shake = 0, time = 0, J = null, samples = []
 let viewK = 0;                          // 0: 真上（半紙）　1: 床の間（立体）
 let aR = 0, aCx = 0, aCz = 0, aLoop = false;   // 手添え（丸く描く補助）
 let sYaw = 0, sPhi = PHI, sVel = 0, sDrag = null, scrollDirty = false, shareBlob = null, blobTimer = 0, flashTimer = 0;
-const SHARE_URL = 'https://guriguri00451.github.io/games/play/untido/';   // 公開先が決まったらURLを入れる
+const SHARE_URL = 'https://guriguri00451.github.io/games/play/untido/';   // 投稿本文に付けるURL（プレイページのOGPがリンクカードになる）
 let isRoom = false, stageDirty = true, tubeDirty = false, tubeFull = false, blobIdx = [];
 let save = loadSave();
 
@@ -828,7 +828,7 @@ async function openResult() {
   sYaw = 0; sPhi = PHI; sVel = 0; sDrag = null; glc.style.visibility = 'hidden'; composeScroll();
   scrollCv.setAttribute('aria-label', `銘「${J.mei}」　${J.kata}の型　${kan(J.total)}点。${J.comment.join('')}`);
   $('promo').textContent = hint();
-  $('tweet').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText());
+  $('tweet').href = 'https://x.com/intent/post?text=' + encodeURIComponent(shareText());
   $('result').classList.add('on');
   $('again').focus({ preventScroll: true });
 }
@@ -932,22 +932,11 @@ scrollCv.addEventListener('pointermove', e => {
 });
 const sUp = e => { if (sDrag && e.pointerId === sDrag.id) { sDrag = null; scrollCv.style.cursor = ''; } };
 scrollCv.addEventListener('pointerup', sUp); scrollCv.addEventListener('pointercancel', sUp);
-// Xに投稿：スマホは共有シートで画像ごと、PCは画像をコピーしてから投稿画面へ
-$('tweet').addEventListener('click', e => {
+// Xに投稿：結果画像をクリップボードへコピーし、投稿画面は<a target="_blank">の既定動作で開く。
+// 端末を問わずワンタップでXを開くため共有シートは使わない（画像は投稿欄に貼り付けてもらう）。
+// preventDefaultしないこと：クリック中でないと新しいタブ/Xアプリが開けない
+$('tweet').addEventListener('click', () => {
   if (!J) return;
-  const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
-  if (touch && shareBlob && navigator.canShare) {
-    const file = new File([shareBlob], `unchido-${J.total}.png`, { type: 'image/png' });
-    let ok = false; try { ok = navigator.canShare({ files: [file] }); } catch (err) {}
-    if (ok) {
-      e.preventDefault();
-      const intent = $('tweet').href;
-      flash('共有メニューからXを選んで');
-      // 共有メニューが使えない・閉じられたときは、Xの投稿画面を開く
-      navigator.share({ files: [file], text: shareText() }).catch(() => { location.href = intent; });
-      return;
-    }
-  }
   try {
     const blob = shareBlob ? Promise.resolve(shareBlob) : new Promise(r => scrollCv.toBlob(r, 'image/png'));
     navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
